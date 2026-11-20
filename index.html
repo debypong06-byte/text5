@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>盲道識別</title>
+<style>
+  :root {
+    --bg: #0e0f11; --panel: #17191d; --line: #2b2e35; --text: #f3f1ea; --muted: #9c9ea6;
+    --accent: #f5c518; --ok: #3ddc84; --info: #58b6ff; --warn: #ffb020; --bad: #ff5a52;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "PingFang HK", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  .app { max-width: 720px; margin: 0 auto; padding: 16px 16px 40px; }
+
+  .top { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
+  .mark {
+    width: 40px; height: 40px; flex: none; border-radius: 9px; background: var(--accent);
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 8px 7px;
+  }
+  .mark i { background: #0e0f11; border-radius: 3px; opacity: .85; }
+  h1 { font-size: 20px; margin: 0; line-height: 1.2; letter-spacing: .02em; }
+  .top p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+
+  .status {
+    display: flex; gap: 14px; align-items: center; padding: 14px 16px; border-radius: 14px;
+    background: var(--panel); border: 1px solid var(--line); border-left: 6px solid var(--tone);
+  }
+  .status .icon {
+    width: 56px; height: 56px; flex: none; border-radius: 50%;
+    background: var(--tone); color: #0e0f11; display: grid; place-items: center;
+  }
+  .status .icon svg { width: 34px; height: 34px; }
+  .status .big { font-size: clamp(20px, 5.2vw, 28px); font-weight: 700; line-height: 1.25; }
+  .status .sub { color: var(--muted); font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .tone-idle { --tone: #6b6e76; } .tone-ok { --tone: var(--ok); } .tone-info { --tone: var(--info); }
+  .tone-warn { --tone: var(--warn); } .tone-bad { --tone: var(--bad); }
+
+  .stage {
+    position: relative; margin: 12px 0; border-radius: 14px; overflow: hidden;
+    background: #000; border: 1px solid var(--line);
+  }
+  canvas { display: block; max-width: 100%; max-height: 62vh; width: auto; height: auto; margin: 0 auto; cursor: crosshair; }
+  .placeholder {
+    aspect-ratio: 4 / 3; max-height: 62vh; width: 100%; display: grid; place-items: center;
+    text-align: center; color: var(--muted); padding: 24px;
+    background: repeating-linear-gradient(90deg, #f5c51814 0 14px, transparent 14px 34px), #111316;
+  }
+  .placeholder b { display: block; color: var(--text); font-size: 18px; margin-bottom: 4px; }
+  [hidden] { display: none !important; }
+  .toast {
+    position: absolute; left: 12px; right: 12px; bottom: 12px; background: #000d; color: #fff;
+    padding: 10px 12px; border-radius: 10px; font-size: 14px; opacity: 0; transform: translateY(6px);
+    transition: opacity .2s, transform .2s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: none; }
+
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  button, .btn {
+    font: inherit; font-weight: 600; min-height: 52px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); padding: 10px 12px; cursor: pointer;
+    display: grid; place-items: center; text-align: center;
+  }
+  button:active, .btn:active { filter: brightness(1.2); }
+  .primary { grid-column: 1 / -1; min-height: 60px; font-size: 18px; background: var(--accent); color: #141414; border-color: var(--accent); }
+  .primary.on { background: transparent; color: var(--bad); border-color: var(--bad); }
+  button:focus-visible, .btn:focus-within, select:focus-visible, input:focus-visible { outline: 3px solid var(--info); outline-offset: 2px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+
+  .panel { margin-top: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 2px 16px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: 0; }
+  .row > label, .row > .lab { font-weight: 600; flex: none; }
+  .row .grow { flex: 1; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .row .right { display: flex; align-items: center; gap: 10px; }
+  .hint { color: var(--muted); font-size: 13px; margin: -4px 0 12px; }
+  select {
+    font: inherit; color: var(--text); background: #0e0f11; border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 10px; min-height: 44px;
+  }
+  input[type=range] { accent-color: var(--accent); width: 100%; min-height: 32px; }
+  input[type=checkbox] { width: 24px; height: 24px; accent-color: var(--accent); }
+  .swatch { width: 28px; height: 28px; border-radius: 8px; border: 2px solid #ffffff40; }
+  .small { min-height: 40px; padding: 6px 12px; font-size: 14px; }
+  .note { color: var(--muted); font-size: 13px; margin: 14px 2px 0; }
+  video.src { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+  .ask { grid-column: 1 / -1; min-height: 56px; font-size: 17px; border-color: var(--accent); color: var(--accent); }
+  .listen { display: flex; align-items: center; gap: 8px; margin: 10px 2px 0; color: var(--muted); font-size: 14px; }
+  .listen .dot { width: 10px; height: 10px; border-radius: 50%; background: #6b6e76; flex: none; }
+  .listen.on .dot { background: var(--ok); box-shadow: 0 0 0 4px #3ddc8433; }
+  .listen.busy .dot { background: var(--warn); box-shadow: 0 0 0 4px #ffb02033; }
+  .answer { margin-top: 10px; padding: 12px 16px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
+  .answer .q { color: var(--muted); font-size: 13px; }
+  .answer .a { font-size: 18px; font-weight: 600; margin-top: 2px; }
+  .panel h2 { font-size: 15px; margin: 14px 0 0; color: var(--accent); }
+  .panel h2 + .row { border-top: 0; }
+  .keyrow { display: flex; gap: 8px; padding: 0 0 12px; }
+  .keyrow input {
+    flex: 1; min-width: 0; font: inherit; color: var(--text); background: #0e0f11;
+    border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; min-height: 44px;
+  }
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="top">
+    <div class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+    <div>
+      <h1>盲道識別</h1>
+      <p>用鏡頭認黃色盲道,語音提示方向</p>
+    </div>
+  </header>
+
+  <section class="status tone-idle" id="status" data-state="IDLE">
+    <div class="icon" id="icon" aria-hidden="true"></div>
+    <div>
+      <div class="big" id="msg" aria-live="off">未開始</div>
+      <div class="sub" id="sub">撳「開啟鏡頭」,將鏡頭對住前面地面</div>
+    </div>
+  </section>
+
+  <div class="listen" id="listen" hidden><span class="dot"></span><span id="listenText"></span></div>
+  <section class="answer" id="answer" hidden>
+    <div class="q" id="ansQ"></div>
+    <div class="a" id="ansA"></div>
+  </section>
+
+  <section class="stage">
+    <canvas id="view" width="640" height="480" hidden></canvas>
+    <div class="placeholder" id="placeholder">
+      <div><b>鏡頭畫面會喺呢度顯示</b>綠色範圍係認到嘅盲道,白線係盲道走向</div>
+    </div>
+    <div class="toast" id="toast" role="alert"></div>
+  </section>
+
+  <section class="actions">
+    <button class="primary" id="btnCam" type="button">開啟鏡頭</button>
+    <button class="ask" id="btnAsk" type="button">問:前方有咩?</button>
+    <button id="btnFlip" type="button">轉前/後鏡頭</button>
+    <label class="btn" for="file">用相片/影片測試</label>
+    <input class="sr" id="file" type="file" accept="image/*,video/*">
+  </section>
+
+  <section class="panel">
+    <div class="row">
+      <label for="voice">語音提示</label>
+      <div class="right">
+        <button class="small" id="btnTest" type="button">測試聲音</button>
+        <select id="voice">
+          <option value="yue">廣東話</option>
+          <option value="cmn">普通話</option>
+          <option value="en">English</option>
+          <option value="off">關閉</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <label for="level">靈敏度</label>
+      <div class="grow"><span>嚴格</span><input id="level" type="range" min="0" max="4" step="1" value="2"><span>寬鬆</span></div>
+    </div>
+    <div class="row">
+      <span class="lab">識別顏色</span>
+      <div class="right">
+        <span class="swatch" id="swatch"></span><span id="colorName">黃色(預設)</span>
+        <button class="small" id="btnReset" type="button">還原黃色</button>
+      </div>
+    </div>
+    <p class="hint">盲道唔係標準黃色?喺畫面入面點一下盲道,就會改為識別嗰隻顏色。認錯太多就將靈敏度拉向「嚴格」,認漏就拉向「寬鬆」。</p>
+    <div class="row" id="vibRow" hidden>
+      <label for="vib">震動提示</label>
+      <div class="right"><span class="hint" style="margin:0">一下=左 兩下=右 三下=前面有變 長震=未見到</span><input id="vib" type="checkbox" checked></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>AI 助手(DeepSeek)</h2>
+    <div class="row">
+      <label for="wake">講「你好小程序」喚醒</label>
+      <input id="wake" type="checkbox">
+    </div>
+    <p class="hint" id="wakeHint">開咗之後,講「你好小程序,前方有咩?」,就會影低而家個畫面問 AI,再讀出答案。要容許用咪;語音識別由瀏覽器提供,Chrome 會經 Google 伺服器處理。</p>
+    <div class="row"><span class="lab">DeepSeek API Key</span><span class="hint" id="keyState" style="margin:0">未設定</span></div>
+    <div class="keyrow">
+      <input id="keyInput" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" aria-label="DeepSeek API Key">
+      <button class="small" id="btnKeySave" type="button">儲存</button>
+      <button class="small" id="btnKeyClear" type="button" hidden>清除</button>
+    </div>
+    <p class="hint">Key 只會存喺呢部機嘅瀏覽器,唔會上傳到 GitHub。問問題時,畫面相片會傳去 DeepSeek 分析。冇 Key 都用得,但只會講盲道位置。</p>
+  </section>
+
+  <p class="note">呢個係輔助工具,靠顏色認盲道,夜晚黃燈、黃色路線、褪色或者非黃色盲道都可能認錯或者認漏;AI 嘅回答亦可能有錯。唔可以取代白杖或者導盲犬。</p>
+</main>
+
+<video class="src" id="cam" playsinline muted></video>
+<video class="src" id="clip" playsinline muted loop></video>
+
+<script>
+(() => {
+'use strict';
+
+/* CORE-BEGIN: 純運算,無 DOM */
+const PROC_MAX = 192;            // 分析用縮圖嘅長邊(像素)
+const MIN_AREA = 0.012;          // 最少要佔畫面幾多先當係盲道
+const HUE_TOL = [10, 15, 20, 26, 32];          // 靈敏度 0..4 對應嘅色相容許範圍(度)
+const SV_SCALE = [1.3, 1.15, 1, 0.82, 0.65];   // 靈敏度對飽和度/亮度門檻嘅倍數
+const YELLOW = { hue: 48, sat: 0.33, val: 0.33 };
+
+function makeBuffers(n) {
+  return { a: new Uint8Array(n), b: new Uint8Array(n), t: new Uint8Array(n), labels: new Int32Array(n), stack: new Int32Array(n) };
+}
+
+// 1. 顏色分割:色相接近目標、夠鮮、夠光嘅像素 = 1
+function buildMask(rgba, n, target, level, out) {
+  const tol = HUE_TOL[level], k = SV_SCALE[level];
+  const sMin = target.sat * k, vMin = target.val * k * 255, hc = target.hue;
+  for (let i = 0, p = 0; i < n; i++, p += 4) {
+    const r = rgba[p], g = rgba[p + 1], b = rgba[p + 2];
+    const mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    const mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
+    const d = mx - mn;
+    let m = 0;
+    if (mx >= vMin && d > 0 && d >= sMin * mx) {
+      let h;
+      if (mx === r) h = ((g - b) / d) % 6;
+      else if (mx === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60; if (h < 0) h += 360;
+      let dh = Math.abs(h - hc); if (dh > 180) dh = 360 - dh;
+      if (dh <= tol) m = 1;
+    }
+    out[i] = m;
+  }
+}
+
+// 2. 3x3 形態學(膨脹/侵蝕),用嚟補窿同清雜點
+function morph3(src, tmp, dst, W, H, dilate) {
+  for (let y = 0; y < H; y++) {
+    const row = y * W;
+    for (let x = 0; x < W; x++) {
+      const a = src[row + (x > 0 ? x - 1 : 0)], b = src[row + x], c = src[row + (x < W - 1 ? x + 1 : x)];
+      tmp[row + x] = dilate ? (a | b | c) : (a & b & c);
+    }
+  }
+  for (let y = 0; y < H; y++) {
+    const r0 = (y > 0 ? y - 1 : 0) * W, r1 = y * W, r2 = (y < H - 1 ? y + 1 : y) * W;
+    for (let x = 0; x < W; x++) {
+      const a = tmp[r0 + x], b = tmp[r1 + x], c = tmp[r2 + x];
+      dst[r1 + x] = dilate ? (a | b | c) : (a & b & c);
+    }
+  }
+}
+
+// 3. 搵最大一塊相連區域
+function largestComponent(mask, W, H, labels, stack) {
+  labels.fill(0);
+  const n = W * H;
+  let best = 0, bestArea = 0, cur = 0;
+  for (let i = 0; i < n; i++) {
+    if (!mask[i] || labels[i]) continue;
+    cur++;
+    let area = 0, sp = 0;
+    stack[sp++] = i; labels[i] = cur;
+    while (sp) {
+      const p = stack[--sp]; area++;
+      const x = p % W;
+      if (x > 0 && mask[p - 1] && !labels[p - 1]) { labels[p - 1] = cur; stack[sp++] = p - 1; }
+      if (x < W - 1 && mask[p + 1] && !labels[p + 1]) { labels[p + 1] = cur; stack[sp++] = p + 1; }
+      if (p >= W && mask[p - W] && !labels[p - W]) { labels[p - W] = cur; stack[sp++] = p - W; }
+      if (p < n - W && mask[p + W] && !labels[p + W]) { labels[p + W] = cur; stack[sp++] = p + W; }
+    }
+    if (area > bestArea) { bestArea = area; best = cur; }
+  }
+  return { label: best, area: bestArea };
+}
+
+// 4. 量度呢塊區域:近端/遠端位置同闊度、走向直線
+function measure(labels, W, H, label) {
+  const cnt = new Int32Array(H), sum = new Float64Array(H);
+  let yTop = -1, yBot = -1;
+  for (let y = 0, i = 0; y < H; y++) {
+    let c = 0, s = 0;
+    for (let x = 0; x < W; x++, i++) if (labels[i] === label) { c++; s += x; }
+    cnt[y] = c; sum[y] = s;
+    if (c) { if (yTop < 0) yTop = y; yBot = y; }
+  }
+  if (yTop < 0) return null;
+  const h = yBot - yTop + 1;
+  const band = Math.max(2, Math.round(h * 0.18));
+  const bandStat = (y0, y1) => {
+    let c = 0, s = 0, rows = 0;
+    for (let y = y0; y <= y1; y++) if (cnt[y]) { c += cnt[y]; s += sum[y]; rows++; }
+    return { cx: s / c, w: c / rows };
+  };
+  const near = bandStat(Math.max(yTop, yBot - band + 1), yBot);
+  const far = bandStat(yTop, Math.min(yBot, yTop + band - 1));
+  // 加權最小二乘:x = a + b*y
+  let sw = 0, sy = 0, sx = 0, syy = 0, sxy = 0;
+  for (let y = yTop; y <= yBot; y++) {
+    const w = cnt[y]; if (!w) continue;
+    const cx = sum[y] / w;
+    sw += w; sy += w * y; sx += w * cx; syy += w * y * y; sxy += w * y * cx;
+  }
+  const den = sw * syy - sy * sy;
+  const b = den > 1e-6 ? (sw * sxy - sy * sx) / den : 0;
+  const a = (sx - b * sy) / sw;
+  return {
+    yTop, yBot, h, a, b,
+    nearCx: near.cx, nearW: near.w, farCx: far.cx, farW: far.w,
+    angle: Math.atan(-b) * 180 / Math.PI   // 正數 = 盲道向遠處偏右
+  };
+}
+
+// 5. 將量度結果變成一個提示狀態
+function classify(m, W, H) {
+  if (!m) return 'NONE';
+  const off = (m.nearCx - W / 2) / (W / 2);
+  if (m.yBot < H * 0.75) return off < -0.25 ? 'AHEAD_LEFT' : off > 0.25 ? 'AHEAD_RIGHT' : 'AHEAD';
+  if (off < -0.3) return 'LEFT';
+  if (off > 0.3) return 'RIGHT';
+  if (m.farW > m.nearW * 1.3) {
+    const shift = (m.farCx - m.nearCx) / Math.max(1, m.nearW);
+    if (shift < -0.5) return 'TURN_LEFT';
+    if (shift > 0.5) return 'TURN_RIGHT';
+    if (m.farW > m.nearW * 1.6) return 'JUNCTION';
+  }
+  if (m.yTop > H * 0.22 && m.farW >= m.nearW * 0.5) return 'END';
+  if (m.angle > 18) return 'VEER_RIGHT';
+  if (m.angle < -18) return 'VEER_LEFT';
+  return 'STRAIGHT';
+}
+
+function analyze(rgba, W, H, target, level, buf) {
+  const n = W * H;
+  buildMask(rgba, n, target, level, buf.a);
+  morph3(buf.a, buf.t, buf.b, W, H, true);    // 先補窿(膨脹→侵蝕)
+  morph3(buf.b, buf.t, buf.a, W, H, false);
+  morph3(buf.a, buf.t, buf.b, W, H, false);   // 再清雜點(侵蝕→膨脹)
+  morph3(buf.b, buf.t, buf.a, W, H, true);
+  const c = largestComponent(buf.a, W, H, buf.labels, buf.stack);
+  const m = c.area >= n * MIN_AREA ? measure(buf.labels, W, H, c.label) : null;
+  return { mask: buf.a, labels: buf.labels, label: m ? c.label : -1, area: m ? c.area : 0, m, state: classify(m, W, H) };
+}
+
+// 取樣:讀取點擊位置附近嘅平均色相/飽和度/亮度
+function sampleTarget(rgba, W, H, x, y) {
+  let cx = 0, cy = 0, ss = 0, sv = 0, k = 0;
+  for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+    const px = Math.min(W - 1, Math.max(0, x + dx)), py = Math.min(H - 1, Math.max(0, y + dy));
+    const p = (py * W + px) * 4, r = rgba[p], g = rgba[p + 1], b = rgba[p + 2];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    let h = 0;
+    if (d > 0) {
+      if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
+      h *= 60; if (h < 0) h += 360;
+    }
+    const s = mx ? d / mx : 0, rad = h * Math.PI / 180;
+    cx += Math.cos(rad) * s; cy += Math.sin(rad) * s; ss += s; sv += mx / 255; k++;
+  }
+  let hue = Math.atan2(cy, cx) * 180 / Math.PI; if (hue < 0) hue += 360;
+  return { hue, sat: ss / k, val: sv / k };
+}
+/* CORE-END */
+
+// ---------- 文字 ----------
+const PHRASES = {
+  yue: { IDLE: '未開始', WAIT: '分析緊…', START: '開始識別', NONE: '未見到盲道',
+    LEFT: '盲道喺左邊,向左移', RIGHT: '盲道喺右邊,向右移',
+    AHEAD: '盲道喺正前方', AHEAD_LEFT: '盲道喺左前方', AHEAD_RIGHT: '盲道喺右前方',
+    STRAIGHT: '喺盲道上,直行', VEER_LEFT: '盲道偏左,稍為向左', VEER_RIGHT: '盲道偏右,稍為向右',
+    TURN_LEFT: '前面向左轉', TURN_RIGHT: '前面向右轉', JUNCTION: '前面有分岔', END: '前面盲道完結,小心' },
+  cmn: { IDLE: '未開始', WAIT: '分析中…', START: '開始識別', NONE: '沒有看到盲道',
+    LEFT: '盲道在左邊,向左移', RIGHT: '盲道在右邊,向右移',
+    AHEAD: '盲道在正前方', AHEAD_LEFT: '盲道在左前方', AHEAD_RIGHT: '盲道在右前方',
+    STRAIGHT: '在盲道上,直行', VEER_LEFT: '盲道偏左,稍微向左', VEER_RIGHT: '盲道偏右,稍微向右',
+    TURN_LEFT: '前面向左轉', TURN_RIGHT: '前面向右轉', JUNCTION: '前面有分岔', END: '前面盲道結束,小心' },
+  en: { IDLE: 'Not started', WAIT: 'Analysing…', START: 'Detection started', NONE: 'No tactile paving in view',
+    LEFT: 'Paving on your left, move left', RIGHT: 'Paving on your right, move right',
+    AHEAD: 'Paving straight ahead', AHEAD_LEFT: 'Paving ahead on the left', AHEAD_RIGHT: 'Paving ahead on the right',
+    STRAIGHT: 'On the paving, go straight', VEER_LEFT: 'Paving bears left', VEER_RIGHT: 'Paving bears right',
+    TURN_LEFT: 'Left turn ahead', TURN_RIGHT: 'Right turn ahead', JUNCTION: 'Junction ahead', END: 'Paving ends ahead, take care' }
+};
+const VOICE_PREFS = { yue: ['zh-hk', 'yue', 'zh-tw', 'zh'], cmn: ['zh-cn', 'cmn', 'zh-tw', 'zh'], en: ['en-us', 'en-gb', 'en'] };
+const VOICE_LANG = { yue: 'zh-HK', cmn: 'zh-CN', en: 'en-US' };
+
+// ---------- AI 助手文字 ----------
+const DS_URL = 'https://api.deepseek.com/chat/completions';
+const DS_MODEL = 'deepseek-flash';          // DeepSeek 可以睇圖嘅模型
+const KEY_STORE = 'tp-ds-key';
+const WAKE_RE = /小程序|小程式|曉程序|小成序|小呈序|hello app|hey app/i;
+const AI_SAY = {
+  yue: { ASK: '前方有咩?', THINK: '等我睇下', READY: '我喺度,請講', NOCAM: '請先開啟鏡頭',
+    NOKEY: '未設定 DeepSeek API Key,所以只可以講盲道位置', ERR_KEY: 'DeepSeek API Key 唔啱,請重新輸入',
+    ERR_PAY: 'DeepSeek 戶口餘額不足', ERR_BUSY: 'DeepSeek 而家太忙,請遲啲再試', ERR_NET: '連唔到 DeepSeek,請檢查網絡',
+    ERR_TIME: 'DeepSeek 回應太慢,請再試', ERR: 'AI 回答失敗', TEST: '聲音測試。盲道識別已經準備好。',
+    Q: '問題', CTX: '本機盲道偵測(靠顏色判斷,可能有錯)', SEP: '。' },
+  cmn: { ASK: '前方有什麼?', THINK: '我看一下', READY: '我在,請說', NOCAM: '請先開啟鏡頭',
+    NOKEY: '未設定 DeepSeek API Key,所以只能說盲道位置', ERR_KEY: 'DeepSeek API Key 不正確,請重新輸入',
+    ERR_PAY: 'DeepSeek 帳戶餘額不足', ERR_BUSY: 'DeepSeek 現在太忙,請稍後再試', ERR_NET: '連不上 DeepSeek,請檢查網絡',
+    ERR_TIME: 'DeepSeek 回應太慢,請再試', ERR: 'AI 回答失敗', TEST: '聲音測試。盲道識別已經準備好。',
+    Q: '問題', CTX: '本機盲道偵測(靠顏色判斷,可能有錯)', SEP: '。' },
+  en: { ASK: "What's ahead?", THINK: 'Let me look', READY: "I'm listening", NOCAM: 'Please turn on the camera first',
+    NOKEY: 'No DeepSeek API key is set, so I can only describe the paving', ERR_KEY: 'The DeepSeek API key is not valid',
+    ERR_PAY: 'The DeepSeek account has no balance left', ERR_BUSY: 'DeepSeek is busy, please try again later', ERR_NET: 'Cannot reach DeepSeek, check the network',
+    ERR_TIME: 'DeepSeek took too long, please try again', ERR: 'The AI answer failed', TEST: 'Sound test. The paving detector is ready.',
+    Q: 'Question', CTX: 'On-device paving detector (colour based, may be wrong)', SEP: '. ' }
+};
+const SYS_PROMPT = {
+  yue: '你係幫視障人士行路嘅語音助手。張相係用戶手機鏡頭而家影到嘅前方畫面。用廣東話口語回答,最多兩句、五十字以內,唔好用列點、emoji 或者 markdown。先講有冇即時危險,例如障礙物、梯級、車、單車、行人、坑窿,再答用戶嘅問題。位置用「左邊、正前面、右邊」同大約幾多步嚟講。睇唔清就直接講睇唔清,唔好估。',
+  cmn: '你是幫助視障人士走路的語音助手。圖片是用戶手機鏡頭現在拍到的前方畫面。用普通話口語回答,最多兩句、五十字以內,不要用列表、emoji 或 markdown。先說有沒有即時危險,例如障礙物、台階、車輛、自行車、行人、坑洞,再回答用戶的問題。位置用「左邊、正前方、右邊」和大約幾步來描述。看不清楚就直接說看不清楚,不要猜。',
+  en: 'You are a walking assistant for a blind or low-vision user. The image is what their phone camera sees ahead right now. Answer in plain spoken English, at most two short sentences, with no lists, emoji or markdown. First mention any immediate hazard such as obstacles, steps, cars, bicycles, people or holes, then answer the question. Describe positions as left, straight ahead or right, with a rough number of steps. If the image is unclear, say so instead of guessing.'
+};
+
+const ARROW = r => `<svg viewBox="0 0 48 48" style="transform:rotate(${r}deg)"><path fill="currentColor" d="M24 5 41 25H30.5v18h-13V25H7z"/></svg>`;
+const ICON_NONE = '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"><circle cx="24" cy="24" r="15"/><path d="M13.5 34.5l21-21"/></svg>';
+const ICON_STOP = '<svg viewBox="0 0 48 48"><rect x="11" y="11" width="26" height="26" rx="5" fill="currentColor"/></svg>';
+const ICON_FORK = '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 42V27M24 27 11 12M24 27l13-15M11 21v-9h9M37 21v-9h-9"/></svg>';
+const ICON_DOT = '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="7" fill="currentColor"/></svg>';
+const STATE_UI = {
+  IDLE: ['idle', ICON_DOT], WAIT: ['idle', ICON_DOT], NONE: ['bad', ICON_NONE],
+  LEFT: ['warn', ARROW(-90)], RIGHT: ['warn', ARROW(90)],
+  AHEAD: ['info', ARROW(0)], AHEAD_LEFT: ['info', ARROW(-45)], AHEAD_RIGHT: ['info', ARROW(45)],
+  STRAIGHT: ['ok', ARROW(0)], VEER_LEFT: ['warn', ARROW(-25)], VEER_RIGHT: ['warn', ARROW(25)],
+  TURN_LEFT: ['warn', ARROW(-90)], TURN_RIGHT: ['warn', ARROW(90)], JUNCTION: ['warn', ICON_FORK], END: ['bad', ICON_STOP]
+};
+const VIBE = {
+  NONE: [500], END: [90, 70, 90, 70, 90], JUNCTION: [90, 70, 90, 70, 90],
+  LEFT: [110], AHEAD_LEFT: [110], VEER_LEFT: [110], TURN_LEFT: [110],
+  RIGHT: [110, 80, 110], AHEAD_RIGHT: [110, 80, 110], VEER_RIGHT: [110, 80, 110], TURN_RIGHT: [110, 80, 110]
+};
+
+// ---------- 元件 ----------
+const $ = id => document.getElementById(id);
+const statusEl = $('status'), iconEl = $('icon'), msgEl = $('msg'), subEl = $('sub');
+const view = $('view'), placeholder = $('placeholder'), toastEl = $('toast');
+const btnCam = $('btnCam'), btnFlip = $('btnFlip'), fileEl = $('file');
+const voiceEl = $('voice'), levelEl = $('level'), swatch = $('swatch'), colorName = $('colorName'), btnReset = $('btnReset');
+const vibRow = $('vibRow'), vibEl = $('vib');
+const cam = $('cam'), clip = $('clip');
+const btnAsk = $('btnAsk'), btnTest = $('btnTest'), wakeEl = $('wake'), wakeHint = $('wakeHint');
+const listenEl = $('listen'), listenText = $('listenText'), answerEl = $('answer'), ansQ = $('ansQ'), ansA = $('ansA');
+const keyInput = $('keyInput'), keyState = $('keyState'), btnKeySave = $('btnKeySave'), btnKeyClear = $('btnKeyClear');
+const vctx = view.getContext('2d');
+const proc = document.createElement('canvas'), pctx = proc.getContext('2d', { willReadFrequently: true });
+const maskCanvas = document.createElement('canvas'), mctx = maskCanvas.getContext('2d');
+
+const VIEW_MAX = 720, STABLE_MS = 350, REPEAT_MS = 5000;
+let target = { ...YELLOW }, custom = false, level = 2, voice = 'yue', vibrate = true;
+let mode = 'idle', facing = 'environment', stream = null, src = null, running = false;
+let pw = 0, ph = 0, buf = null, maskImg = null, lastRGBA = null, fileUrl = null;
+let cand = null, candAt = 0, stable = 'IDLE', spoken = null, spokenAt = 0, lastTick = 0, lastSub = 0;
+let wakeLock = null, toastTimer = 0;
+let voices = [], ttsBusyUntil = 0, navHoldUntil = 0;            // 語音輸出
+let asking = false, memKey = '';                                  // AI 助手
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, wakeOn = false, awaitingQ = 0, awaitTimer = 0;   // 語音喚醒
+
+// ---------- 設定儲存 ----------
+function save() {
+  try { localStorage.setItem('tp-settings', JSON.stringify({ target, custom, level, voice, vibrate })); } catch (e) {}
+}
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem('tp-settings') || 'null');
+    if (!s) return;
+    if (s.target && isFinite(s.target.hue) && isFinite(s.target.sat) && isFinite(s.target.val)) { target = s.target; custom = !!s.custom; }
+    if (Number.isInteger(s.level) && s.level >= 0 && s.level <= 4) level = s.level;
+    if (PHRASES[s.voice] || s.voice === 'off') voice = s.voice;
+    vibrate = s.vibrate !== false;
+  } catch (e) {}
+}
+function syncControls() {
+  voiceEl.value = voice; levelEl.value = level; vibEl.checked = vibrate;
+  swatch.style.background = `hsl(${target.hue.toFixed(0)} 85% 52%)`;
+  colorName.textContent = custom ? '自訂顏色' : '黃色(預設)';
+  btnReset.hidden = !custom;
+  msgEl.setAttribute('aria-live', voice === 'off' ? 'polite' : 'off');   // 內置語音開咗就唔好同讀屏軟件重複
+  answerEl.setAttribute('aria-live', voice === 'off' ? 'polite' : 'off');
+  btnAsk.textContent = (lang() === 'en' ? 'Ask: ' : '問:') + AI_SAY[lang()].ASK;
+}
+
+// ---------- 提示 ----------
+const lang = () => (voice === 'off' ? 'yue' : voice);
+function toast(text, ms = 4500) {
+  toastEl.textContent = text; toastEl.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('show'), ms);
+}
+function renderStatus(state, sub) {
+  const ui = STATE_UI[state];
+  statusEl.className = 'status tone-' + ui[0];
+  statusEl.dataset.state = state;
+  iconEl.innerHTML = ui[1];
+  msgEl.textContent = PHRASES[lang()][state];
+  if (sub != null) subEl.textContent = sub;
+}
+function showError(title, detail) {
+  statusEl.className = 'status tone-bad'; statusEl.dataset.state = 'ERROR';
+  iconEl.innerHTML = ICON_NONE; msgEl.textContent = title; subEl.textContent = detail;
+}
+function loadVoices() { try { voices = speechSynthesis.getVoices() || []; } catch (e) {} }
+function pickVoice() {
+  if (!voices.length) loadVoices();
+  for (const pref of VOICE_PREFS[voice]) {
+    const v = voices.find(x => x.lang.replace('_', '-').toLowerCase().startsWith(pref));
+    if (v) return v;
+  }
+  return null;
+}
+// hold = true:AI 助手講嘢,講緊嘅時候暫停盲道提示
+function say(text, hold) {
+  if (voice === 'off' || !('speechSynthesis' in window) || !text) return;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    const v = pickVoice();
+    if (v) { u.voice = v; u.lang = v.lang; } else u.lang = VOICE_LANG[voice];
+    u.rate = 1.1;
+    const t0 = performance.now();
+    ttsBusyUntil = t0 + 1200 + text.length * 280;      // 估計讀完嘅時間,期間唔聽咪
+    if (hold) navHoldUntil = Math.max(navHoldUntil, ttsBusyUntil + 1500);
+    u.onend = u.onerror = () => {
+      const t = performance.now();
+      ttsBusyUntil = t + 600;
+      if (hold) navHoldUntil = t + 1500;
+    };
+    const busy = speechSynthesis.speaking || speechSynthesis.pending;
+    speechSynthesis.cancel();
+    speechSynthesis.resume();
+    if (busy) setTimeout(() => speechSynthesis.speak(u), 80);   // 部分瀏覽器 cancel 後即刻 speak 會冇聲
+    else speechSynthesis.speak(u);
+  } catch (e) {}
+}
+function announce(state, now) {
+  if (asking || now < navHoldUntil) return;
+  if (state === spoken && now - spokenAt < REPEAT_MS) return;
+  const changed = state !== spoken;
+  spoken = state; spokenAt = now;
+  say(PHRASES[lang()][state]);
+  if (changed && vibrate && navigator.vibrate && VIBE[state]) { try { navigator.vibrate(VIBE[state]); } catch (e) {} }
+}
+
+// ---------- 影像來源 ----------
+async function keepAwake(on) {
+  try {
+    if (on && 'wakeLock' in navigator && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch (e) {}
+}
+function stopAll() {
+  running = false; mode = 'idle'; src = null; lastRGBA = null;
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  cam.srcObject = null; clip.pause(); clip.removeAttribute('src'); clip.load();
+  if (fileUrl) { URL.revokeObjectURL(fileUrl); fileUrl = null; }
+  try { speechSynthesis.cancel(); } catch (e) {}
+  keepAwake(false);
+  view.hidden = true; placeholder.hidden = false;
+  btnCam.textContent = '開啟鏡頭'; btnCam.classList.remove('on');
+  cand = null; stable = 'IDLE'; spoken = null;
+}
+function begin(source, newMode) {
+  src = source; mode = newMode; running = true;
+  cand = null; stable = 'WAIT'; spoken = null; candAt = performance.now();
+  view.hidden = false; placeholder.hidden = true;
+  btnCam.textContent = '停止'; btnCam.classList.add('on');
+  renderStatus('WAIT', newMode === 'camera' ? '將鏡頭對住前面地面' : '測試模式:分析緊你揀嘅檔案');
+  keepAwake(true);
+}
+async function startCamera() {
+  stopAll();
+  say(PHRASES[lang()].START);   // 喺撳掣嗰下即刻講,手機瀏覽器先肯出聲
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showError('呢度用唔到即時鏡頭', '瀏覽器只容許 HTTPS 網址或者電腦本機檔案開鏡頭。可以先用「相片/影片測試」。');
+    return;
+  }
+  renderStatus('WAIT', '等緊鏡頭權限…');
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: facing }, width: { ideal: 640 }, height: { ideal: 480 } }
+    });
+  } catch (e) {
+    const why = {
+      NotAllowedError: '鏡頭權限被拒絕。請喺瀏覽器網址列嘅鎖頭/鏡頭圖示度容許使用鏡頭,再撳一次。',
+      NotFoundError: '呢部設備搵唔到鏡頭。',
+      NotReadableError: '鏡頭俾其他程式佔用緊,請關閉佢再試。'
+    }[e.name] || ('原因:' + (e.message || e.name));
+    showError('開唔到鏡頭', why);
+    return;
+  }
+  cam.srcObject = stream;
+  try { await cam.play(); } catch (e) {}
+  begin(cam, 'camera');
+}
+function openFile(file) {
+  if (!file) return;
+  stopAll();
+  fileUrl = URL.createObjectURL(file);
+  if (file.type.startsWith('video/')) {
+    clip.src = fileUrl;
+    clip.play().then(() => begin(clip, 'file')).catch(() => showError('播唔到呢條影片', '請試下 MP4 格式。'));
+  } else {
+    const img = new Image();
+    img.onload = () => begin(img, 'file');
+    img.onerror = () => showError('開唔到呢張相', '請試下 JPG 或 PNG。');
+    img.src = fileUrl;
+  }
+}
+
+// ---------- 每一格 ----------
+function step(now) {
+  const sw = src.videoWidth || src.naturalWidth || 0, sh = src.videoHeight || src.naturalHeight || 0;
+  if (!sw || !sh) return;
+  const ps = PROC_MAX / Math.max(sw, sh);
+  const W = Math.max(8, Math.round(sw * ps)), H = Math.max(8, Math.round(sh * ps));
+  if (W !== pw || H !== ph) {
+    pw = W; ph = H; proc.width = W; proc.height = H; maskCanvas.width = W; maskCanvas.height = H;
+    buf = makeBuffers(W * H); maskImg = mctx.createImageData(W, H);
+  }
+  const ds = Math.min(2, VIEW_MAX / Math.max(sw, sh));
+  const cw = Math.round(sw * ds), ch = Math.round(sh * ds);
+  if (view.width !== cw || view.height !== ch) { view.width = cw; view.height = ch; }
+
+  pctx.drawImage(src, 0, 0, W, H);
+  const rgba = pctx.getImageData(0, 0, W, H).data;
+  lastRGBA = rgba;
+  const res = analyze(rgba, W, H, target, level, buf);
+
+  // 畫面:原圖 + 綠色盲道範圍 + 走向線
+  vctx.drawImage(src, 0, 0, cw, ch);
+  const md = maskImg.data, L = res.label;
+  for (let i = 0, p = 0, n = W * H; i < n; i++, p += 4) {
+    if (L > 0 && res.labels[i] === L) { md[p] = 40; md[p + 1] = 230; md[p + 2] = 170; md[p + 3] = 125; }
+    else if (res.mask[i]) { md[p] = 255; md[p + 1] = 255; md[p + 2] = 255; md[p + 3] = 70; }
+    else md[p + 3] = 0;
+  }
+  mctx.putImageData(maskImg, 0, 0);
+  vctx.drawImage(maskCanvas, 0, 0, cw, ch);
+  const kx = cw / W, ky = ch / H;
+  vctx.save();
+  vctx.setLineDash([10, 10]); vctx.lineWidth = 2; vctx.strokeStyle = 'rgba(255,255,255,.4)';
+  vctx.beginPath(); vctx.moveTo(cw / 2, 0); vctx.lineTo(cw / 2, ch); vctx.stroke();
+  const m = res.m;
+  if (m) {
+    vctx.setLineDash([]); vctx.lineCap = 'round';
+    const x0 = (m.a + m.b * m.yBot) * kx, y0 = (m.yBot + 1) * ky, x1 = (m.a + m.b * m.yTop) * kx, y1 = m.yTop * ky;
+    vctx.lineWidth = 9; vctx.strokeStyle = 'rgba(0,0,0,.55)';
+    vctx.beginPath(); vctx.moveTo(x0, y0); vctx.lineTo(x1, y1); vctx.stroke();
+    vctx.lineWidth = 4; vctx.strokeStyle = '#fff';
+    vctx.beginPath(); vctx.moveTo(x0, y0); vctx.lineTo(x1, y1); vctx.stroke();
+    vctx.fillStyle = '#fff'; vctx.strokeStyle = 'rgba(0,0,0,.6)'; vctx.lineWidth = 3;
+    vctx.beginPath(); vctx.arc(m.nearCx * kx, Math.min(ch - 12, y0 - 10), 9, 0, Math.PI * 2); vctx.fill(); vctx.stroke();
+  }
+  vctx.restore();
+
+  // 狀態要維持一陣先當真,避免跳嚟跳去
+  if (res.state !== cand) { cand = res.state; candAt = now; }
+  let changed = false;
+  if (cand !== stable && now - candAt >= STABLE_MS) { stable = cand; changed = true; }
+  if (changed || now - lastSub > 300) {
+    lastSub = now;
+    let sub;
+    if (m) {
+      const off = (m.nearCx - W / 2) / (W / 2);
+      const side = off < -0.05 ? '左' : off > 0.05 ? '右' : '中';
+      sub = `覆蓋 ${(res.area / (W * H) * 100).toFixed(0)}% · 位置 ${side} ${Math.abs(off).toFixed(2)} · 傾斜 ${m.angle.toFixed(0)}°`;
+    } else sub = '畫面入面搵唔到符合顏色嘅區域';
+    if (stable !== 'WAIT') renderStatus(stable, sub);
+  }
+  if (stable !== 'WAIT') announce(stable, now);
+}
+function loop(ts) {
+  requestAnimationFrame(loop);
+  if (!running || !src || ts - lastTick < 66) return;
+  lastTick = ts;
+  try { step(ts); } catch (e) { console.error(e); }
+}
+
+// ---------- AI 助手 ----------
+function getKey() { try { return localStorage.getItem(KEY_STORE) || memKey; } catch (e) { return memKey; } }
+function setKey(k) {
+  memKey = k;
+  try { if (k) localStorage.setItem(KEY_STORE, k); else localStorage.removeItem(KEY_STORE); } catch (e) {}
+  syncKey();
+}
+function syncKey() {
+  const k = getKey();
+  keyState.textContent = k ? '已設定(尾四位 ' + k.slice(-4) + ')' : '未設定';
+  btnKeyClear.hidden = !k;
+  keyInput.value = '';
+  keyInput.placeholder = k ? '已儲存;要換就輸入新 Key' : 'sk-…';
+}
+function showAnswer(q, a) {
+  answerEl.hidden = false;
+  ansQ.textContent = (lang() === 'en' ? 'Q: ' : '問:') + q;
+  ansA.textContent = a;
+}
+function setListen() {
+  const waiting = awaitingQ > performance.now();
+  listenEl.hidden = !(wakeOn || asking);
+  listenEl.className = 'listen' + (asking ? ' busy' : wakeOn ? ' on' : '');
+  listenText.textContent = asking ? 'AI 諗緊…' : waiting ? '請講你嘅問題…' : '聽緊:講「你好小程序」';
+}
+// 將而家個畫面縮細做 JPEG(DeepSeek 用 low 細節,512 像素已經夠)
+function grabFrame() {
+  if (!src) return null;
+  const sw = src.videoWidth || src.naturalWidth || 0, sh = src.videoHeight || src.naturalHeight || 0;
+  if (!sw || !sh) return null;
+  const s = Math.min(1, 512 / Math.max(sw, sh));
+  const c = document.createElement('canvas');
+  c.width = Math.round(sw * s); c.height = Math.round(sh * s);
+  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.75);
+}
+async function callDeepSeek(question, image, key) {
+  const L = lang(), T = AI_SAY[L];
+  const content = [{ type: 'text', text: T.Q + ':' + question + '\n' + T.CTX + ':' + (PHRASES[L][stable] || '') }];
+  if (image) content.push({ type: 'image_url', image_url: { url: image, detail: 'low' } });
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 25000);
+  try {
+    const r = await fetch(DS_URL, {
+      method: 'POST', signal: ctl.signal,
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+      body: JSON.stringify({
+        model: DS_MODEL,
+        messages: [{ role: 'system', content: SYS_PROMPT[L] }, { role: 'user', content }],
+        thinking: { type: 'disabled' },   // 唔使深度思考,答得快啲
+        max_tokens: 200, temperature: 0.3, stream: false
+      })
+    });
+    if (!r.ok) {
+      const err = new Error('HTTP ' + r.status); err.status = r.status;
+      try { err.detail = (await r.json()).error.message || ''; } catch (e) { err.detail = ''; }
+      throw err;
+    }
+    const data = await r.json();
+    const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!text) throw Object.assign(new Error('empty'), { status: 0 });
+    return text.replace(/[*#`>_]/g, '').replace(/\s*\n+\s*/g, ' ').trim();
+  } finally { clearTimeout(timer); }
+}
+async function ask(question) {
+  if (asking) return;
+  const L = lang(), T = AI_SAY[L];
+  question = (question || '').trim() || T.ASK;
+  if (!running || !src) { showAnswer(question, T.NOCAM); say(T.NOCAM, true); return; }
+  const key = getKey();
+  if (!key) {
+    const t = (PHRASES[L][stable] || '') + T.SEP + T.NOKEY;
+    showAnswer(question, t); say(t, true); return;
+  }
+  asking = true; setListen();
+  showAnswer(question, '…');
+  say(T.THINK, true);
+  try {
+    let text;
+    try { text = await callDeepSeek(question, grabFrame(), key); }
+    catch (e) {
+      if (e.status === 400 && /image/i.test(e.detail || '')) text = await callDeepSeek(question, null, key);   // 模型唔收圖就淨係用文字
+      else throw e;
+    }
+    showAnswer(question, text); say(text, true);
+  } catch (e) {
+    const t = e.name === 'AbortError' ? T.ERR_TIME : e.status === 401 ? T.ERR_KEY : e.status === 402 ? T.ERR_PAY
+      : (e.status === 429 || e.status >= 500) ? T.ERR_BUSY : e.status ? T.ERR + '(' + e.status + ')' : T.ERR_NET;
+    showAnswer(question, t); say(t, true);
+  } finally {
+    asking = false; setListen();
+  }
+}
+
+// ---------- 語音喚醒 ----------
+const SR_LANG = { yue: 'zh-HK', cmn: 'zh-CN', en: 'en-US' };
+const cleanQ = s => (s || '').replace(/^[\s,,。.!!??、::]+/, '').replace(/[\s。.]+$/, '').trim();
+function handleUtterance(alts) {
+  const now = performance.now();
+  for (const t of alts) {
+    const m = t.match(WAKE_RE);
+    if (!m) continue;
+    const rest = cleanQ(t.slice(m.index + m[0].length));
+    clearTimeout(awaitTimer);
+    if (rest.length >= 2) { awaitingQ = 0; ask(rest); }
+    else {
+      awaitingQ = now + 10000;
+      awaitTimer = setTimeout(() => { awaitingQ = 0; setListen(); }, 10000);
+      say(AI_SAY[lang()].READY, true);
+    }
+    setListen();
+    return;
+  }
+  if (awaitingQ > now) {
+    const q = cleanQ(alts[0]);
+    // 喇叭啱啱講完「我喺度,請講」,收到嘅可能係回音,唔當係問題
+    if (!q || now < ttsBusyUntil || /請講|請說|我喺度|我在|listening/i.test(q)) return;
+    clearTimeout(awaitTimer); awaitingQ = 0;
+    ask(q);
+    setListen();
+  }
+}
+// 喚醒詞唔會喺盲道提示入面出現,所以喇叭講緊嘢都照聽
+function onSpeech(ev) {
+  for (let i = ev.resultIndex; i < ev.results.length; i++) {
+    const res = ev.results[i];
+    if (!res.isFinal) continue;
+    handleUtterance(Array.from(res, a => (a.transcript || '').trim()));
+  }
+}
+function startWake() {
+  if (!SR) return;
+  if (rec) { rec.onend = null; try { rec.abort(); } catch (e) {} }
+  rec = new SR();
+  rec.lang = SR_LANG[lang()];
+  rec.continuous = true;
+  rec.interimResults = false;
+  rec.maxAlternatives = 3;
+  rec.onresult = onSpeech;
+  rec.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      stopWake(); toast('咪權限被拒絕,用唔到語音喚醒。請喺網址列容許使用咪。');
+    } else if (e.error === 'network') toast('語音識別要上網先用到');
+  };
+  rec.onend = () => { if (wakeOn) setTimeout(() => { if (wakeOn && rec) try { rec.start(); } catch (e) {} }, 300); };
+  try { rec.start(); } catch (e) {}
+  setListen();
+}
+function stopWake() {
+  wakeOn = false; wakeEl.checked = false; awaitingQ = 0;
+  if (rec) { rec.onend = null; try { rec.abort(); } catch (e) {} rec = null; }
+  setListen();
+}
+
+// ---------- 操作 ----------
+btnCam.addEventListener('click', () => {
+  if (running) { stopAll(); renderStatus('IDLE', '撳「開啟鏡頭」,將鏡頭對住前面地面'); }
+  else startCamera();
+});
+btnFlip.addEventListener('click', () => {
+  facing = facing === 'environment' ? 'user' : 'environment';
+  if (mode === 'camera') startCamera(); else toast(facing === 'user' ? '下次會開前鏡頭' : '下次會開後鏡頭', 2000);
+});
+fileEl.addEventListener('change', () => { openFile(fileEl.files[0]); fileEl.value = ''; });
+voiceEl.addEventListener('change', () => {
+  voice = voiceEl.value; save(); syncControls();
+  if (running && stable !== 'WAIT') { renderStatus(stable); spoken = null; }
+  else if (!running) renderStatus('IDLE');
+  if (wakeOn) startWake();   // 用新語言重新聽
+});
+btnTest.addEventListener('click', () => {
+  if (voice === 'off') { toast('語音提示而家係「關閉」,請先揀語言', 2500); return; }
+  say(AI_SAY[lang()].TEST, true);
+  setTimeout(() => { if (!pickVoice()) toast('呢部機搵唔到對應語言嘅聲音,會用預設聲音讀', 3500); }, 300);
+});
+btnAsk.addEventListener('click', () => ask(''));
+wakeEl.addEventListener('change', () => {
+  if (!wakeEl.checked) { stopWake(); return; }
+  if (!SR) { wakeEl.checked = false; toast('呢個瀏覽器唔支援語音喚醒,請用 Chrome、Edge 或 Safari,或者撳「問:前方有咩?」掣'); return; }
+  wakeOn = true; startWake();
+});
+btnKeySave.addEventListener('click', () => {
+  const k = keyInput.value.trim();
+  if (!k) { toast('請先輸入 API Key', 2000); return; }
+  if (!/^sk-[A-Za-z0-9_-]{10,}$/.test(k)) { toast('格式唔啱:DeepSeek API Key 應該係 sk- 開頭', 3000); return; }
+  setKey(k); toast('已儲存,只存喺呢部機', 2500);
+});
+keyInput.addEventListener('keydown', e => { if (e.key === 'Enter') btnKeySave.click(); });
+btnKeyClear.addEventListener('click', () => { setKey(''); toast('已清除 API Key', 2000); });
+levelEl.addEventListener('input', () => { level = +levelEl.value; save(); });
+vibEl.addEventListener('change', () => { vibrate = vibEl.checked; save(); });
+btnReset.addEventListener('click', () => { target = { ...YELLOW }; custom = false; save(); syncControls(); toast('已還原為黃色', 2000); });
+view.addEventListener('click', e => {
+  if (!running || !lastRGBA) return;
+  const r = view.getBoundingClientRect();
+  const x = Math.floor((e.clientX - r.left) / r.width * pw), y = Math.floor((e.clientY - r.top) / r.height * ph);
+  const s = sampleTarget(lastRGBA, pw, ph, x, y);
+  if (s.sat < 0.12) { toast('呢個位太接近灰白色,靠顏色分唔到。請點盲道上面顏色鮮明嘅位置。'); return; }
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  target = { hue: s.hue, sat: clamp(s.sat * 0.5, 0.1, 0.6), val: clamp(s.val * 0.45, 0.1, 0.6) };
+  custom = true; save(); syncControls();
+  toast('已改為識別你點嘅顏色', 2500);
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden && running) keepAwake(true); });
+
+load();
+if ('vibrate' in navigator) vibRow.hidden = false;
+if ('speechSynthesis' in window) {
+  loadVoices();
+  try { speechSynthesis.addEventListener('voiceschanged', loadVoices); } catch (e) { speechSynthesis.onvoiceschanged = loadVoices; }
+}
+if (!SR) wakeHint.textContent = '呢個瀏覽器唔支援語音喚醒(Chrome、Edge、Safari 先有),可以撳上面「問:前方有咩?」掣代替。';
+syncControls();
+syncKey();
+setListen();
+renderStatus('IDLE');
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
